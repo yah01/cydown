@@ -15,9 +15,12 @@ Download a file at *url*, and save it as *fileName*:
 ```go
 cydown.Download(url,filename)
 ```
-cydown could get the file name from URL, if you wanna use the name from url, just set *filename* = ""
+cydown could get the file name from URL, if you wanna use the name from url:
+```go
+cydown.Download(url,"")
+```
 
-u could set proxy before downloading, for example:
+You could set proxy before downloading:
 ```go
 cydown.SetGlobalProxy(cydown.ProxyFn{
     return url.Parse("http://127.0.0.1:1080")
