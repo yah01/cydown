@@ -130,12 +130,18 @@ func NewTask(url string) *DownloadTask {
 	}
 
 	InitThreads(task.threads, task.URL, task.Size)
-	var totalSize int64
-	for i := range task.threads {
-		totalSize += task.threads[i].Size()
-		log.Println(totalSize)
-	}
+
 	return task
+}
+
+func (task *DownloadTask) Count() int64 {
+	var count int64
+
+	for i := range task.threads {
+		count += task.threads[i].Recv
+	}
+
+	return count
 }
 
 func (task *DownloadTask) Download(fileName string) {
@@ -145,11 +151,13 @@ func (task *DownloadTask) Download(fileName string) {
 	if fileName != "" {
 		task.FileName = fileName
 	}
+
 	tempFiles := make([]*os.File, len(task.threads))
 	err := os.Mkdir("TMP"+task.FileName, 0644)
 	if err != nil {
 		log.Println(err)
 	}
+
 	for i := range tempFiles {
 		tempFiles[i], err = os.OpenFile(fmt.Sprintf("./TMP%s/tmp%v", task.FileName, i), os.O_CREATE|os.O_APPEND, 0644)
 
@@ -163,11 +171,17 @@ func (task *DownloadTask) Download(fileName string) {
 
 	// The downloading ends after this line
 	task.waitThread.Wait()
-	for i := range task.threads {
-		fileInfo, _ := os.Stat(tempFiles[i].Name())
-		log.Println("recv,fileSize", task.threads[i].Recv, fileInfo.Size())
-	}
+
+	// Merge temp files to the origin file
 	task.MergeTemp(tempFiles)
+
+	// Delete the temp files and temp dir
+	for i := range tempFiles {
+		tempFileName := tempFiles[i].Name()
+		tempFiles[i].Close()
+		os.Remove(tempFileName)
+	}
+	os.Remove("TMP" + task.FileName)
 }
 
 // Turn on a thread to download
@@ -179,9 +193,6 @@ func (task *DownloadTask) StartThread(tempFiles []*os.File, i int) {
 		req, _ = http.NewRequest("GET", task.URL, nil)
 		client = thread.NewClient()
 	)
-
-	// Set header range
-	req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", thread.Range[0], thread.Range[1]))
 
 	for thread.Recv < thread.Size() {
 		// Download
@@ -210,6 +221,5 @@ func (task *DownloadTask) MergeTemp(files []*os.File) {
 	for i := range files {
 		files[i].Seek(0, os.SEEK_SET)
 		io.Copy(file, files[i])
-		files[i].Close()
 	}
 }
