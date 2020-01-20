@@ -27,3 +27,9 @@ cydown.SetGlobalProxy(cydown.ProxyFn{
 })
 ```
 
+goroutine is safe for cydown.Download(),but You should call
+```go
+cydown.Wait()
+```
+to make sure all downloading tasks end before the program exits.
+
