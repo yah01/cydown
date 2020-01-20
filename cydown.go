@@ -250,7 +250,6 @@ func (task *DownloadTask) StartThread(i int) {
 		}
 	}
 }
-}
 
 func (task *DownloadTask) MergeTemp(files []*os.File) {
 	file, _ := os.OpenFile(task.FileName, os.O_CREATE|os.O_APPEND, 0644)
@@ -258,7 +257,7 @@ func (task *DownloadTask) MergeTemp(files []*os.File) {
 
 	for i := range files {
 		files[i].Seek(0, os.SEEK_SET)
-		io.Copy(file,files[i])
+		io.Copy(file, files[i])
 		files[i].Close()
 	}
 }
