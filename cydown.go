@@ -158,48 +158,7 @@ func (task *DownloadTask) Download(fileName string) {
 		}
 
 		task.waitThread.Add(1)
-
-		startThread := func(task *DownloadTask, i int) {
-			defer task.waitThread.Done()
-			thread := &task.threads[i]
-			file := tempFiles[i]
-			req, _ := http.NewRequest("GET", task.URL, nil)
-			client := thread.NewClient()
-
-			// Set header range
-			req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", thread.Range[0], thread.Range[1]))
-
-			// Data buffer
-			//var data = make([]byte, 4*1024)
-
-			for thread.Recv < thread.Size() {
-				// Download
-				file.Seek(0, os.SEEK_END)
-				n, err := io.Copy(file, thread.res.Body)
-				if err != nil {
-					log.Println(n, err)
-				}
-				thread.Recv += n
-				thread.res.Body.Close()
-
-				fileInfo, _ := os.Stat(file.Name())
-				if thread.Recv != fileInfo.Size() {
-					log.Println("Error!")
-				}
-
-				// Continue if downloading has not finished yet
-				if thread.Recv < thread.Size() {
-					req.Header.Set("Range",
-						fmt.Sprintf("bytes=%v-%v", thread.Range[0]+thread.Recv, thread.Range[1]))
-					thread.res, _ = client.Do(req)
-				} else if thread.Recv != thread.Size() {
-					log.Println("recv,size:",
-						thread.Recv, thread.Size())
-				}
-			}
-		}
-
-		go startThread(task, i)
+		go task.StartThread(tempFiles, i)
 	}
 
 	// The downloading ends after this line
@@ -211,18 +170,18 @@ func (task *DownloadTask) Download(fileName string) {
 	task.MergeTemp(tempFiles)
 }
 
-func (task *DownloadTask) StartThread(i int) {
+// Turn on a thread to download
+func (task *DownloadTask) StartThread(tempFiles []*os.File, i int) {
 	defer task.waitThread.Done()
-	thread := &task.threads[i]
-	file := tempFiles[i]
-	req, _ := http.NewRequest("GET", task.URL, nil)
-	client := thread.NewClient()
+	var (
+		thread = &task.threads[i]
+		file   = tempFiles[i]
+		req, _ = http.NewRequest("GET", task.URL, nil)
+		client = thread.NewClient()
+	)
 
 	// Set header range
 	req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", thread.Range[0], thread.Range[1]))
-
-	// Data buffer
-	//var data = make([]byte, 4*1024)
 
 	for thread.Recv < thread.Size() {
 		// Download
@@ -234,23 +193,16 @@ func (task *DownloadTask) StartThread(i int) {
 		thread.Recv += n
 		thread.res.Body.Close()
 
-		fileInfo, _ := os.Stat(file.Name())
-		if thread.Recv != fileInfo.Size() {
-			log.Println("Error!")
-		}
-
 		// Continue if downloading has not finished yet
 		if thread.Recv < thread.Size() {
 			req.Header.Set("Range",
 				fmt.Sprintf("bytes=%v-%v", thread.Range[0]+thread.Recv, thread.Range[1]))
 			thread.res, _ = client.Do(req)
-		} else if thread.Recv != thread.Size() {
-			log.Println("recv,size:",
-				thread.Recv, thread.Size())
 		}
 	}
 }
 
+// Merge the temp files
 func (task *DownloadTask) MergeTemp(files []*os.File) {
 	file, _ := os.OpenFile(task.FileName, os.O_CREATE|os.O_APPEND, 0644)
 	defer file.Close()
