@@ -40,6 +40,15 @@ func DisableLog() {
 	errorLog = log.New(ioutil.Discard, "Error: ", 0)
 }
 
+func AddTask() {
+	TaskCounter.Add(1)
+}
+
+func Wait() {
+	TaskCounter.Wait()
+}
+
+
 func SetThreadNum(num int) {
 	ThreadNum = num
 }
@@ -89,9 +98,6 @@ func Download(url string, fileName string) {
 	task.Download(fileName)
 }
 
-func Wait() {
-	TaskCounter.Wait()
-}
 
 type Range = [2]int64
 type DownloadThread struct {
