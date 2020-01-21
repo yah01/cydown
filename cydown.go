@@ -3,6 +3,7 @@ package cydown
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -14,12 +15,29 @@ type ProxyFn = func(*http.Request) (*url.URL, error)
 
 var (
 	ThreadNum   int
-	waitAllTask sync.WaitGroup
+	TaskCounter sync.WaitGroup
 	globalProxy ProxyFn
+
+	traceLog *log.Logger
+	errorLog *log.Logger
 )
 
 func init() {
 	ThreadNum = 10
+
+	DisableLog()
+}
+
+func EnableLog() {
+	traceLogFile, _ := os.OpenFile("cydownTrace.log", os.O_CREATE|os.O_APPEND, 0644)
+	errorLogFile, _ := os.OpenFile("cydownError.log", os.O_CREATE|os.O_APPEND, 0644)
+	traceLog = log.New(traceLogFile, "TRACE: ", log.LstdFlags)
+	errorLog = log.New(errorLogFile, "Error: ", log.LstdFlags|log.Lshortfile)
+}
+
+func DisableLog() {
+	traceLog = log.New(ioutil.Discard, "", 0)
+	errorLog = log.New(ioutil.Discard, "Error: ", 0)
 }
 
 func SetThreadNum(num int) {
@@ -45,6 +63,8 @@ func GetFileNameFromURL(url string) string {
 }
 
 func InitThreads(threads []DownloadThread, url string, size int64) {
+	traceLog.Println("InitThreads", url, size)
+	defer traceLog.Println("InitThreads", url, size, "Done")
 	partSize := size / int64(len(threads))
 	for i := range threads {
 		// Set Range of downloading thread
@@ -70,7 +90,7 @@ func Download(url string, fileName string) {
 }
 
 func Wait() {
-	waitAllTask.Wait()
+	TaskCounter.Wait()
 }
 
 type Range = [2]int64
@@ -86,20 +106,17 @@ func (thread *DownloadThread) Size() int64 {
 }
 
 func (thread *DownloadThread) NewClient() *http.Client {
-	var transport *http.Transport
+	traceLog.Println("NewClient")
+	defer traceLog.Println("NewClient Done")
+
+	var transport = &http.Transport{}
 	if thread.proxy != nil {
-		transport = &http.Transport{
-			Proxy: thread.proxy,
-		}
-		return &http.Client{Transport: transport}
+		transport.Proxy = thread.proxy
 	} else if globalProxy != nil {
-		transport = &http.Transport{
-			Proxy: globalProxy,
-		}
-		return &http.Client{Transport: transport}
-	} else {
-		return &http.Client{}
+		transport.Proxy = globalProxy
 	}
+
+	return &http.Client{Transport: transport}
 }
 
 type DownloadTask struct {
@@ -111,25 +128,33 @@ type DownloadTask struct {
 }
 
 func NewTask(url string) *DownloadTask {
+	traceLog.Println("NewTask", url)
+	defer traceLog.Println("NewTask", url, "Done")
+
 	task := &DownloadTask{
 		URL:      url,
 		FileName: GetFileNameFromURL(url),
 	}
 
+	//log.Println("Request file info...")
 	transport := &http.Transport{Proxy: globalProxy}
 	client := &http.Client{Transport: transport}
-	res, _ := client.Get(url)
+	res, err := client.Get(url)
+	if err != nil {
+		errorLog.Println(err)
+	}
 	defer res.Body.Close()
+
 	task.Size = res.ContentLength
 
+	//log.Println("Init threads")
 	// If the size of the file is less than 1MB, download it by only one thread
 	if task.Size < 1024*1024 {
 		task.threads = make([]DownloadThread, 1)
 	} else {
 		task.threads = make([]DownloadThread, ThreadNum)
 	}
-
-	InitThreads(task.threads, task.URL, task.Size)
+	//log.Println("Init done")
 
 	return task
 }
@@ -145,8 +170,10 @@ func (task *DownloadTask) Count() int64 {
 }
 
 func (task *DownloadTask) Download(fileName string) {
-	waitAllTask.Add(1)
-	defer waitAllTask.Done()
+	defer TaskCounter.Done()
+
+	traceLog.Println(task.URL, task.FileName, "Download")
+	defer traceLog.Println(task.URL, task.FileName, "Download", "Done")
 
 	if fileName != "" {
 		task.FileName = fileName
@@ -155,14 +182,15 @@ func (task *DownloadTask) Download(fileName string) {
 	tempFiles := make([]*os.File, len(task.threads))
 	err := os.Mkdir("TMP"+task.FileName, 0644)
 	if err != nil {
-		log.Println(err)
+		errorLog.Println(err)
 	}
 
+	InitThreads(task.threads, task.URL, task.Size)
 	for i := range tempFiles {
 		tempFiles[i], err = os.OpenFile(fmt.Sprintf("./TMP%s/tmp%v", task.FileName, i), os.O_CREATE|os.O_APPEND, 0644)
 
 		if err != nil {
-			log.Println(err)
+			errorLog.Println(err)
 		}
 
 		task.waitThread.Add(1)
@@ -179,14 +207,22 @@ func (task *DownloadTask) Download(fileName string) {
 	for i := range tempFiles {
 		tempFileName := tempFiles[i].Name()
 		tempFiles[i].Close()
-		os.Remove(tempFileName)
+		err = os.Remove(tempFileName)
+		if err != nil {
+			errorLog.Println(err)
+		}
 	}
-	os.Remove("TMP" + task.FileName)
+	err = os.Remove("TMP" + task.FileName)
+	if err != nil {
+		errorLog.Println(err)
+	}
 }
 
 // Turn on a thread to download
 func (task *DownloadTask) StartThread(tempFiles []*os.File, i int) {
-	defer task.waitThread.Done()
+	traceLog.Println(task.URL, task.FileName, "StartThread", i)
+	defer traceLog.Println(task.URL, task.FileName, "StartThread", i, "Done")
+
 	var (
 		thread = &task.threads[i]
 		file   = tempFiles[i]
@@ -199,7 +235,7 @@ func (task *DownloadTask) StartThread(tempFiles []*os.File, i int) {
 		file.Seek(0, os.SEEK_END)
 		n, err := io.Copy(file, thread.res.Body)
 		if err != nil {
-			log.Println(n, err)
+			errorLog.Println(n, err)
 		}
 		thread.Recv += n
 		thread.res.Body.Close()
@@ -208,13 +244,18 @@ func (task *DownloadTask) StartThread(tempFiles []*os.File, i int) {
 		if thread.Recv < thread.Size() {
 			req.Header.Set("Range",
 				fmt.Sprintf("bytes=%v-%v", thread.Range[0]+thread.Recv, thread.Range[1]))
-			thread.res, _ = client.Do(req)
+			if thread.res, err = client.Do(req); err != nil {
+				errorLog.Println(err)
+			}
 		}
 	}
+	task.waitThread.Done()
 }
 
 // Merge the temp files
 func (task *DownloadTask) MergeTemp(files []*os.File) {
+	traceLog.Println(task.URL, task.FileName, "MergeTemp")
+	defer traceLog.Println(task.URL, task.FileName, "MergeTemp", "Done")
 	file, _ := os.OpenFile(task.FileName, os.O_CREATE|os.O_APPEND, 0644)
 	defer file.Close()
 
