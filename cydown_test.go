@@ -8,6 +8,7 @@ import (
 )
 
 func TestDownload(t *testing.T) {
+	log.Println("Start test")
 	UseGlobalLocalProxy("1080")
 	task := NewTask("https://dl.google.com/go/go1.13.6.windows-amd64.msi")
 	EnableLog()
