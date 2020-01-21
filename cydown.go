@@ -48,7 +48,6 @@ func Wait() {
 	TaskCounter.Wait()
 }
 
-
 func SetThreadNum(num int) {
 	ThreadNum = num
 }
