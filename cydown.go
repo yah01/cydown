@@ -70,9 +70,24 @@ func GetFileNameFromURL(url string) string {
 	return url[pos+1:]
 }
 
-func InitThreads(threads []DownloadThread, url string, size int64) {
-	traceLog.Println("InitThreads", url, size)
-	defer traceLog.Println("InitThreads", url, size, "Done")
+// Download from url and save as fileName,
+// save as the name from url when fileName equals to empty string
+func Download(url string, fileName string) {
+	task := NewTask(url)
+	task.Download(fileName)
+}
+
+type Range = [2]int64
+type DownloadThread struct {
+	Index int
+	Range Range
+	Recv  int64
+	proxy ProxyFn
+}
+
+func InitThreads(threads []DownloadThread, size int64) {
+	traceLog.Println("InitThreads", size)
+	defer traceLog.Println("InitThreads", size, "Done")
 	partSize := size / int64(len(threads))
 	for i := range threads {
 		// Set Range of downloading thread
@@ -82,28 +97,7 @@ func InitThreads(threads []DownloadThread, url string, size int64) {
 		if i == len(threads)-1 {
 			threads[i].Range = Range{int64(i) * partSize, size - 1}
 		}
-
-		req, _ := http.NewRequest("GET", url, nil)
-		req.Header.Set("Range", fmt.Sprintf("bytes=%v-%v", threads[i].Range[0], threads[i].Range[1]))
-		client := threads[i].NewClient()
-		threads[i].res, _ = client.Do(req)
 	}
-}
-
-// Download from url and save as fileName,
-// save as the name from url when fileName equals to empty string
-func Download(url string, fileName string) {
-	task := NewTask(url)
-	task.Download(fileName)
-}
-
-
-type Range = [2]int64
-type DownloadThread struct {
-	Range Range
-	Recv  int64
-	res   *http.Response
-	proxy ProxyFn
 }
 
 func (thread *DownloadThread) Size() int64 {
@@ -159,6 +153,7 @@ func NewTask(url string) *DownloadTask {
 	} else {
 		task.threads = make([]DownloadThread, ThreadNum)
 	}
+	InitThreads(task.threads, task.Size)
 	//log.Println("Init done")
 
 	return task
@@ -190,7 +185,6 @@ func (task *DownloadTask) Download(fileName string) {
 		errorLog.Println(err)
 	}
 
-	InitThreads(task.threads, task.URL, task.Size)
 	for i := range tempFiles {
 		tempFiles[i], err = os.OpenFile(fmt.Sprintf("./TMP%s/tmp%v", task.FileName, i), os.O_CREATE|os.O_APPEND, 0644)
 
@@ -233,23 +227,29 @@ func (task *DownloadTask) StartThread(tempFiles []*os.File, i int) {
 		file   = tempFiles[i]
 		req, _ = http.NewRequest("GET", task.URL, nil)
 		client = thread.NewClient()
+		res    *http.Response
+		err    error
 	)
+	req.Header.Set("Range",
+		fmt.Sprintf("bytes=%v-%v", thread.Range[0]+thread.Recv, thread.Range[1]))
+	if res, err = client.Do(req); err != nil {
+		errorLog.Println(err)
+	}
 
 	for thread.Recv < thread.Size() {
 		// Download
-		file.Seek(0, os.SEEK_END)
-		n, err := io.Copy(file, thread.res.Body)
+		n, err := io.Copy(file, res.Body)
 		if err != nil {
 			errorLog.Println(n, err)
 		}
 		thread.Recv += n
-		thread.res.Body.Close()
+		res.Body.Close()
 
 		// Continue if downloading has not finished yet
 		if thread.Recv < thread.Size() {
 			req.Header.Set("Range",
 				fmt.Sprintf("bytes=%v-%v", thread.Range[0]+thread.Recv, thread.Range[1]))
-			if thread.res, err = client.Do(req); err != nil {
+			if res, err = client.Do(req); err != nil {
 				errorLog.Println(err)
 			}
 		}
@@ -258,14 +258,14 @@ func (task *DownloadTask) StartThread(tempFiles []*os.File, i int) {
 }
 
 // Merge the temp files
-func (task *DownloadTask) MergeTemp(files []*os.File) {
+func (task *DownloadTask) MergeTemp(tempFiles []*os.File) {
 	traceLog.Println(task.URL, task.FileName, "MergeTemp")
 	defer traceLog.Println(task.URL, task.FileName, "MergeTemp", "Done")
 	file, _ := os.OpenFile(task.FileName, os.O_CREATE|os.O_APPEND, 0644)
 	defer file.Close()
 
-	for i := range files {
-		files[i].Seek(0, os.SEEK_SET)
-		io.Copy(file, files[i])
+	for i := range tempFiles {
+		tempFiles[i].Seek(0, os.SEEK_SET)
+		io.Copy(file, tempFiles[i])
 	}
 }
