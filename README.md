@@ -19,6 +19,11 @@ cydown could get the file name from URL, if you wanna use the name from url:
 ```go
 cydown.Download(url,"")
 ```
+Download() is non-blocking, so you must call:
+```go
+cydown.Wait()
+```
+at the end of your program, to make sure the all downloads end before the program quiting.
 
 You could set proxy before downloading:
 ```go
@@ -26,11 +31,7 @@ cydown.SetGlobalProxy(cydown.ProxyFn{
     return url.Parse("http://127.0.0.1:1080")
 })
 ```
-
-cydown.Download() is non-blocking:
+or just:
 ```go
-cydown.Download(url,fileName)
-
-// Make sure the download ending before exiting.
-cydown.Wait()       // Or cydown.TaskCounter.Wait()
+cydown.UseGlobalLocalProxy("1080")
 ```
