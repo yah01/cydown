@@ -9,7 +9,6 @@ type Thread struct {
 	Index int
 	Range Range
 	Recv  int64
-	proxy ProxyFn
 }
 
 func InitThreads(threads []Thread, size int64) {
@@ -36,9 +35,7 @@ func (thread *Thread) NewClient() *http.Client {
 	defer traceLog.Println("NewClient Done")
 
 	var transport = &http.Transport{}
-	if thread.proxy != nil {
-		transport.Proxy = thread.proxy
-	} else if globalProxy != nil {
+	if globalProxy != nil {
 		transport.Proxy = globalProxy
 	}
 

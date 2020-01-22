@@ -1,6 +1,7 @@
 package cydown
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,13 @@ type Task struct {
 	FileName   string
 	threads    []Thread
 	waitThread sync.WaitGroup
+}
+
+type taskJSON struct {
+	URL      string
+	Size     int64
+	FileName string
+	Threads  []Thread
 }
 
 func NewTask(url string) *Task {
@@ -49,6 +57,31 @@ func NewTask(url string) *Task {
 	return task
 }
 
+func (task *Task) MarshalJSON() ([]byte, error) {
+	return json.Marshal(taskJSON{
+		task.URL,
+		task.Size,
+		task.FileName,
+		task.threads,
+	})
+}
+
+func (task *Task) UnmarshalJSON(b []byte) error {
+	var JSON taskJSON
+	if err := json.Unmarshal(b, &JSON); err != nil {
+		return err
+	}
+
+	task = &Task{
+		URL:        JSON.URL,
+		Size:       JSON.Size,
+		FileName:   JSON.FileName,
+		threads:    JSON.Threads,
+		waitThread: sync.WaitGroup{},
+	}
+	return nil
+}
+
 func (task *Task) Count() int64 {
 	var count int64
 
@@ -57,6 +90,10 @@ func (task *Task) Count() int64 {
 	}
 
 	return count
+}
+
+func (task *Task) DirName() string {
+	return "TMP" + task.FileName
 }
 
 // Start downloading.
@@ -78,13 +115,14 @@ func (task *Task) download(fileName string) {
 	}
 
 	tempFiles := make([]*os.File, len(task.threads))
-	err := os.Mkdir("TMP"+task.FileName, 0644)
-	if err != nil {
+	err := os.Mkdir(task.DirName(), 0644)
+	if err != nil && err != os.ErrExist {
 		errorLog.Println(err)
 	}
 
 	for i := range tempFiles {
-		tempFiles[i], err = os.OpenFile(fmt.Sprintf("./TMP%s/tmp%v", task.FileName, i), os.O_CREATE|os.O_APPEND, 0644)
+		tempFiles[i], err = os.OpenFile(fmt.Sprintf("./%s/tmp%v", task.DirName(), i),
+			os.O_CREATE|os.O_APPEND, 0644)
 
 		if err != nil {
 			errorLog.Println(err)
@@ -115,7 +153,7 @@ func (task *Task) download(fileName string) {
 	}
 }
 
-// Turn on a thread to download
+// Start a thread to download
 func (task *Task) StartThread(tempFiles []*os.File, i int) {
 	traceLog.Println(task.URL, task.FileName, "StartThread", i)
 	defer traceLog.Println(task.URL, task.FileName, "StartThread", i, "Done")

@@ -20,6 +20,7 @@ var (
 	errorLog *log.Logger
 )
 
+// Disable log for default.
 func init() {
 	ThreadNum = 10
 
@@ -76,4 +77,3 @@ func Download(url string, fileName string) {
 	task := NewTask(url)
 	task.Download(fileName)
 }
-
