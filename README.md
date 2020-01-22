@@ -27,10 +27,11 @@ cydown.SetGlobalProxy(cydown.ProxyFn{
 })
 ```
 
-goroutine is safe for cydown.Download(),but You should do so:
+cydown.Download() is non-blocking:
 ```go
-cydown.TaskAdd()    // Or cydown.TaskCounter.Add(1)
-go cydown.Download(url,fileName)
+cydown.Download(url,fileName)
+
+// Make sure the download ending before exiting.
 cydown.Wait()       // Or cydown.TaskCounter.Wait()
 ```
 

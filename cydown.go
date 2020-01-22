@@ -40,9 +40,9 @@ func DisableLog() {
 	errorLog = log.New(ioutil.Discard, "Error: ", 0)
 }
 
-func AddTask() {
-	TaskCounter.Add(1)
-}
+//func AddTask() {
+//	TaskCounter.Add(1)
+//}
 
 func Wait() {
 	TaskCounter.Wait()
@@ -169,7 +169,15 @@ func (task *DownloadTask) Count() int64 {
 	return count
 }
 
+// Start downloading.
+// Download() is non-blocking
 func (task *DownloadTask) Download(fileName string) {
+	TaskCounter.Add(1)
+	go task.download(fileName)
+}
+
+// Real implement of download
+func (task *DownloadTask) download(fileName string) {
 	defer TaskCounter.Done()
 
 	traceLog.Println(task.URL, task.FileName, "Download")

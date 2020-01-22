@@ -13,8 +13,8 @@ func TestDownload(t *testing.T) {
 	task := NewTask("https://dl.google.com/go/go1.13.6.windows-amd64.msi")
 	EnableLog()
 	log.Println("Downloading")
-	TaskCounter.Add(1)
-	go task.Download("")
+
+	task.Download("")
 	finish := false
 	go func() {
 		var last int64
