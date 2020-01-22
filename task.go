@@ -122,7 +122,7 @@ func (task *Task) download(fileName string) {
 
 	for i := range tempFiles {
 		tempFiles[i], err = os.OpenFile(fmt.Sprintf("./%s/tmp%v", task.DirName(), i),
-			os.O_CREATE|os.O_APPEND, 0644)
+			os.O_CREATE|os.O_RDWR, 0644)
 
 		if err != nil {
 			errorLog.Println(err)
@@ -155,6 +155,7 @@ func (task *Task) download(fileName string) {
 
 // Start a thread to download
 func (task *Task) StartThread(tempFiles []*os.File, i int) {
+	defer task.waitThread.Done()
 	traceLog.Println(task.URL, task.FileName, "StartThread", i)
 	defer traceLog.Println(task.URL, task.FileName, "StartThread", i, "Done")
 
@@ -172,17 +173,35 @@ func (task *Task) StartThread(tempFiles []*os.File, i int) {
 		errorLog.Println(err)
 	}
 
+	var data = make([]byte, 32*1024)
 	for thread.Recv < thread.Size() {
 		// Download
-		n, err := io.Copy(file, res.Body)
-		if err != nil {
-			errorLog.Println(n, err)
+
+		for {
+			readCnt, err := res.Body.Read(data)
+			if err != nil {
+				errorLog.Println(readCnt, err)
+				break
+			} else if readCnt == 0 {
+				break
+			}
+
+			//log.Println("Before:", readCnt, thread.Recv)
+			WriteCnt, err := file.WriteAt(data[:readCnt], thread.Recv)
+			thread.Recv += int64(WriteCnt)
+			//log.Println("After:", thread.Recv)
+			if err != nil {
+				errorLog.Println(WriteCnt, err)
+				break
+			} else if WriteCnt == 0 {
+				break
+			}
 		}
-		thread.Recv += n
 		res.Body.Close()
 
 		// Continue if downloading has not finished yet
 		if thread.Recv < thread.Size() {
+			traceLog.Println("Continue", thread.Recv, thread.Size())
 			req.Header.Set("Range",
 				fmt.Sprintf("bytes=%v-%v", thread.Range[0]+thread.Recv, thread.Range[1]))
 			if res, err = client.Do(req); err != nil {
@@ -190,7 +209,6 @@ func (task *Task) StartThread(tempFiles []*os.File, i int) {
 			}
 		}
 	}
-	task.waitThread.Done()
 }
 
 // Merge the temp files

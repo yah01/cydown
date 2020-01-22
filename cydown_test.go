@@ -9,13 +9,17 @@ import (
 
 func TestDownload(t *testing.T) {
 	log.Println("Start test")
+
 	UseGlobalLocalProxy("1080")
 	task := NewTask("https://dl.google.com/go/go1.13.6.windows-amd64.msi")
 	EnableLog()
-	log.Println("Downloading")
 
+	log.Println("Downloading")
 	task.Download("")
+
 	finish := false
+
+	// Show the rate
 	go func() {
 		var last int64
 		for !finish {
@@ -24,6 +28,7 @@ func TestDownload(t *testing.T) {
 			time.Sleep(time.Second)
 		}
 	}()
+
 	Wait()
 	finish = true
 	fmt.Println()
