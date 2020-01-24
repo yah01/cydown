@@ -35,3 +35,29 @@ or just:
 ```go
 cydown.UseGlobalLocalProxy("1080")
 ```
+
+## Stop, Save, Load, and Restart
+Stop a task after it started downloading:
+```go
+task.Stop()
+```
+
+and save it:
+```go
+task.Save()
+```
+This will create a JSON file named *fileName.json*, and you could load the JSON file:
+```go
+Load(JSONfileName,&task)
+```
+or:
+```go
+task := Load(JSONfileName,nil)
+```
+the type of the latter is **Task*.
+
+Restart a task is simple, just call Download() again:
+```go
+task.Download("")
+```
+arg fileName is empty string, so that keep the name which you used before.
