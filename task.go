@@ -13,6 +13,7 @@ type Task struct {
 	URL        string
 	Size       int64
 	FileName   string
+	stop       bool
 	threads    []Thread
 	waitThread sync.WaitGroup
 }
@@ -134,6 +135,12 @@ func (task *Task) download(fileName string) {
 
 	// The downloading ends after this line
 	task.waitThread.Wait()
+	if task.stop {
+		for i := range tempFiles {
+			tempFiles[i].Close()
+		}
+		return
+	}
 
 	// Merge temp files to the origin file
 	task.MergeTemp(tempFiles)
@@ -178,6 +185,10 @@ func (task *Task) StartThread(tempFiles []*os.File, i int) {
 		// Download
 
 		for {
+			if task.stop {
+				return
+			}
+
 			readCnt, err := res.Body.Read(data)
 			if err != nil {
 				errorLog.Println(readCnt, err)
@@ -209,6 +220,19 @@ func (task *Task) StartThread(tempFiles []*os.File, i int) {
 			}
 		}
 	}
+}
+
+func (task *Task) Stop() {
+	task.stop = true
+}
+
+func (task *Task) Save() {
+	task.Stop()
+
+	bytes, _ := json.Marshal(task)
+	jsonFile, _ := os.OpenFile(task.FileName+".json", os.O_CREATE|os.O_WRONLY, 0644)
+	jsonFile.Write(bytes)
+	jsonFile.Close()
 }
 
 // Merge the temp files
