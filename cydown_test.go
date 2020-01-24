@@ -23,7 +23,7 @@ func TestDownload(t *testing.T) {
 	go func() {
 		var last int64
 		for !finish {
-			fmt.Printf("\r%v Bytes/%v Bytes - %v Bytes/s\t\t", task.Count(), task.Size, task.Count()-last)
+			fmt.Printf("\r%v Bytes/%v Bytes - %v Bytes/s\t\t", task.Count(), task.size, task.Count()-last)
 			last = task.Count()
 			time.Sleep(time.Second)
 		}
@@ -32,6 +32,31 @@ func TestDownload(t *testing.T) {
 	Wait()
 	finish = true
 	fmt.Println()
+	log.Println("All done")
+	time.Sleep(time.Second)
+}
+
+func TestLoadSave(t *testing.T) {
+	log.Println("Start test")
+
+	//UseGlobalLocalProxy("0")
+	task := NewTask("https://dl.google.com/go/go1.13.6.windows-amd64.msi")
+	EnableLog()
+
+	log.Println("Downloading")
+	task.Download("")
+
+	log.Println("Waiting...")
+	time.Sleep(time.Second * 10)
+	log.Println("Stop!")
+
+	task.Stop()
+	task.Save()
+	Load(task.FileName+".json", task)
+	log.Println("Continue")
+	task.Download("")
+
+	Wait()
 	log.Println("All done")
 	time.Sleep(time.Second)
 }

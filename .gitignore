@@ -1,2 +1,8 @@
 
 *.log
+.idea/vcs.xml
+.idea/modules.xml
+.idea/misc.xml
+.idea/cydown.iml
+go1.13.6.windows-amd64.msi
+go1.13.6.windows-amd64.msi.json

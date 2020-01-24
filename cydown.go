@@ -69,8 +69,8 @@ func GetFileNameFromURL(url string) string {
 	return url[pos+1:]
 }
 
-// Download from url and save as fileName,
-// save as the name from url when fileName equals to empty string.
+// Download from url and save as FileName,
+// save as the name from url when FileName equals to empty string.
 // The function create a task and then call task.Download(),
 // non-blocking as well.
 func Download(url string, fileName string) {
