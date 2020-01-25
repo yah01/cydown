@@ -11,25 +11,12 @@ type Thread struct {
 	Recv  int64
 }
 
-func InitThreads(threads []Thread, size int64) {
-	traceLog.Println("InitThreads", size)
-	defer traceLog.Println("InitThreads", size, "Done")
-	partSize := size / int64(len(threads))
-	for i := range threads {
-		// Set Range of downloading thread
-		threads[i] = Thread{
-			Range: Range{int64(i) * partSize, int64((i+1))*partSize - 1},
-		}
-		if i == len(threads)-1 {
-			threads[i].Range = Range{int64(i) * partSize, size - 1}
-		}
-	}
-}
-
+// Get the size of thread
 func (thread *Thread) Size() int64 {
 	return thread.Range[1] - thread.Range[0] + 1
 }
 
+// Create a http client for thread.
 func (thread *Thread) NewClient() *http.Client {
 	traceLog.Println("NewClient")
 	defer traceLog.Println("NewClient Done")

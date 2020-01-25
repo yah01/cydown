@@ -12,18 +12,17 @@ import (
 type ProxyFn = func(*http.Request) (*url.URL, error)
 
 var (
-	ThreadNum   int
-	TaskCounter sync.WaitGroup
-	globalProxy ProxyFn
+	GlobalThreadNum int
+	TaskCounter     sync.WaitGroup
 
+	globalProxy     ProxyFn
 	traceLog *log.Logger
 	errorLog *log.Logger
 )
 
 // Disable log for default.
 func init() {
-	ThreadNum = 10
-
+	GlobalThreadNum = 10
 	DisableLog()
 }
 
@@ -39,28 +38,24 @@ func DisableLog() {
 	errorLog = log.New(ioutil.Discard, "Error: ", 0)
 }
 
-//func AddTask() {
-//	TaskCounter.Add(1)
-//}
-
+// Wait for all tasks finishing.
 func Wait() {
 	TaskCounter.Wait()
 }
 
-func SetThreadNum(num int) {
-	ThreadNum = num
-}
-
+// Set the proxy for all tasks which without proxy function.
 func SetGlobalProxy(proxyFn func(r *http.Request) (*url.URL, error)) {
 	globalProxy = proxyFn
 }
 
+// Same as SetGlobalProxy() but only need the port.
 func UseGlobalLocalProxy(port string) {
 	SetGlobalProxy(func(_ *http.Request) (*url.URL, error) {
 		return url.Parse("http://127.0.0.1:" + port)
 	})
 }
 
+// Get the file name from URL
 func GetFileNameFromURL(url string) string {
 	pos := len(url) - 1
 	for url[pos] != '/' {

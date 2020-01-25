@@ -12,35 +12,40 @@ import (
 )
 
 type Task struct {
-	URL      string
-	FileName string
+	URL       string
+	FileName  string
+	ThreadNum int
 
 	size       int64
 	stop       bool
-	syncSign   chan bool
+	syncSign   chan bool // For syncing some operations.
 	threads    []Thread
 	tempFiles  []*os.File
 	waitThread sync.WaitGroup
 }
 
 type taskJSON struct {
-	URL      string
-	FileName string
-	Size     int64
-	Threads  []Thread
+	URL       string
+	FileName  string
+	ThreadNum int
+	Size      int64
+	Threads   []Thread
 }
 
+// Create a new task,
+// download from url.
 func NewTask(url string) *Task {
 	traceLog.Println("NewTask", url)
 	defer traceLog.Println("NewTask", url, "Done")
 
 	task := &Task{
-		URL:      url,
-		FileName: GetFileNameFromURL(url),
-		syncSign: make(chan bool),
+		URL:       url,
+		FileName:  GetFileNameFromURL(url),
+		ThreadNum: GlobalThreadNum,
+		syncSign:  make(chan bool),
 	}
 
-	//log.Println("Request file info...")
+	// Get the size of the file.
 	transport := &http.Transport{Proxy: globalProxy}
 	client := &http.Client{Transport: transport}
 	res, err := client.Get(url)
@@ -48,27 +53,38 @@ func NewTask(url string) *Task {
 		errorLog.Println(err)
 	}
 	defer res.Body.Close()
-
 	task.size = res.ContentLength
 
-	//log.Println("Init threads")
-	// If the size of the file is less than 1MB, download it by only one thread
-	if task.size < 1024*1024 {
-		task.threads = make([]Thread, 1)
-	} else {
-		task.threads = make([]Thread, ThreadNum)
-	}
-	InitThreads(task.threads, task.size)
-	//log.Println("Init done")
+	// Initialize the threads.
+	task.initThreads()
 
 	return task
+}
+
+// Initialize the threads of a task.
+func (task *Task) initThreads() {
+	traceLog.Println("InitThreads", task.size)
+	defer traceLog.Println("InitThreads", task.size, "Done")
+
+	task.threads = make([]Thread, task.ThreadNum)
+	partSize := task.size / int64(task.ThreadNum) // The size of each thread
+
+	// Set Range of downloading thread.
+	for i := range task.threads {
+		task.threads[i] = Thread{
+			Range: Range{int64(i) * partSize, int64((i+1))*partSize - 1},
+		}
+		if i == len(task.threads)-1 {
+			task.threads[i].Range = Range{int64(i) * partSize, task.size - 1}
+		}
+	}
 }
 
 func (task Task) MarshalJSON() ([]byte, error) {
 	return json.Marshal(taskJSON{
 		task.URL,
 		task.FileName,
-
+		task.ThreadNum,
 		task.size,
 		task.threads,
 	})
@@ -81,8 +97,9 @@ func (task *Task) UnmarshalJSON(data []byte) error {
 	}
 
 	*task = Task{
-		URL:      JSON.URL,
-		FileName: JSON.FileName,
+		URL:       JSON.URL,
+		FileName:  JSON.FileName,
+		ThreadNum: JSON.ThreadNum,
 
 		size:       JSON.Size,
 		stop:       false,
@@ -95,8 +112,9 @@ func (task *Task) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Get the number of received bytes
 func (task *Task) Count() int64 {
-	var count int64
+	var count int64 = 0
 
 	for i := range task.threads {
 		count += task.threads[i].Recv
@@ -105,6 +123,7 @@ func (task *Task) Count() int64 {
 	return count
 }
 
+// Get the name of the directory by file name.
 func (task *Task) DirName() string {
 	return "TMP" + task.FileName
 }
@@ -127,12 +146,14 @@ func (task *Task) download(fileName string) {
 		task.FileName = fileName
 	}
 
+	// Create directory for temp files.
 	task.tempFiles = make([]*os.File, len(task.threads))
 	err := os.Mkdir(task.DirName(), 0644)
 	if err != nil && err != os.ErrExist {
 		errorLog.Println(err)
 	}
 
+	// Create temp files, and start downloading.
 	for i := range task.tempFiles {
 		task.tempFiles[i], err = os.OpenFile(fmt.Sprintf("./%s/tmp%v", task.DirName(), i),
 			os.O_CREATE|os.O_RDWR, 0644)
@@ -159,15 +180,14 @@ func (task *Task) download(fileName string) {
 	task.MergeTemp()
 
 	// Delete the temp files and temp dir
+	task.Close()
 	for i := range task.tempFiles {
-		tempFileName := task.tempFiles[i].Name()
-		task.tempFiles[i].Close()
-		err = os.Remove(tempFileName)
+		err = os.Remove(task.tempFiles[i].Name())
 		if err != nil {
 			errorLog.Println(err)
 		}
 	}
-	err = os.Remove("TMP" + task.FileName)
+	err = os.Remove(task.DirName())
 	if err != nil {
 		errorLog.Println(err)
 	}
@@ -236,15 +256,18 @@ func (task *Task) StartThread(i int) {
 	}
 }
 
+// Stop the task.
 func (task *Task) Stop() {
-	task.stop = true
-	<-task.syncSign
+	if !task.stop {
+		task.stop = true
+		<-task.syncSign
+	}
 }
 
 // Load a task from a json file
 func Load(jsonFile string, task *Task) *Task {
 	bytes, err := ioutil.ReadFile(jsonFile)
-	if err != nil{
+	if err != nil {
 		log.Println(err)
 	}
 	if task == nil {
@@ -264,12 +287,12 @@ func (task *Task) Save() {
 
 	bytes, err := json.Marshal(task)
 	fmt.Println(string(bytes))
-	if err != nil{
+	if err != nil {
 		log.Println(err)
 	}
 
 	jsonFile, err := os.OpenFile(task.FileName+".json", os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil{
+	if err != nil {
 		log.Println(err)
 	}
 	jsonFile.Write(bytes)
@@ -289,6 +312,7 @@ func (task *Task) MergeTemp() {
 	}
 }
 
+// Close all temp files.
 func (task *Task) Close() {
 	for i := range task.tempFiles {
 		task.tempFiles[i].Close()
